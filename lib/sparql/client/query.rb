@@ -44,6 +44,26 @@ module SPARQL; class Client
       self.new(:select, options).select(*variables)
     end
 
+    # Informative insert (can be combined with delete and where).
+    # @param  [Array<RDF::Query::Pattern, Array>] patterns
+    #   splat of zero or more patterns
+    # @return [Query]
+    # @see    http://www.w3.org/TR/sparql11-query/#GraphPattern
+    def self.insert(*patterns)
+      options = patterns.last.is_a?(Hash) ? patterns.pop : {}
+      self.new(:insert, options).insert(*patterns)
+    end
+
+    # Informative delete (can be combined with insert and where).
+    # @param  [Array<RDF::Query::Pattern, Array>] patterns
+    #   splat of zero or more patterns
+    # @return [Query]
+    # @see    http://www.w3.org/TR/sparql11-query/#GraphPattern
+    def self.delete(*patterns)
+      options = patterns.last.is_a?(Hash) ? patterns.pop : {}
+      self.new(:delete, options).delete(*patterns)
+    end
+
     ##
     # Creates a `DESCRIBE` query.
     #
@@ -83,6 +103,8 @@ module SPARQL; class Client
     # @yield  [query]
     # @yieldparam [Query]
     def initialize(form = :ask, options = {}, &block)
+      @inserts = []
+      @deletes = []
       @subqueries = []
       @form = form.respond_to?(:to_sym) ? form.to_sym : form.to_s.to_sym
       super([], options, &block)
@@ -130,6 +152,26 @@ module SPARQL; class Client
     # @see http://www.w3.org/TR/sparql11-query/#specifyingDataset
     def from(uri)
       options[:from] = uri
+      self
+    end
+
+    # Informative insert (can be combined with delete and where).
+    # @param  [Array<RDF::Query::Pattern, Array>] patterns
+    #   splat of zero or more patterns
+    # @return [Query]
+    # @see    http://www.w3.org/TR/sparql11-query/#GraphPattern
+    def insert(*patterns)
+      @inserts += build_patterns(patterns)
+      self
+    end
+
+    # Informative delete (can be combined with insert and where).
+    # @param  [Array<RDF::Query::Pattern, Array>] patterns
+    #   splat of zero or more patterns
+    # @return [Query]
+    # @see    http://www.w3.org/TR/sparql11-query/#GraphPattern
+    def delete(*patterns)
+      @deletes += build_patterns(patterns)
       self
     end
 
@@ -235,6 +277,19 @@ module SPARQL; class Client
 
     ##
     # @return [Query]
+    # @see    http://www.w3.org/TR/sparql11-query/#prefNames
+    def with(graph_uri_or_var)
+      options[:with] = case graph_uri_or_var
+        when Symbol then RDF::Query::Variable.new(graph_uri_or_var)
+        when String then RDF::URI(graph_uri_or_var)
+        when RDF::Value then graph_uri_or_var
+        else raise ArgumentError
+      end
+      self
+    end
+
+    ##
+    # @return [Query]
     # @see    http://www.w3.org/TR/sparql11-query/#optionals
     def optional(*patterns)
       (options[:optionals] ||= []) << build_patterns(patterns)
@@ -317,24 +372,46 @@ module SPARQL; class Client
     #
     # @return [String]
     def to_s
-      buffer = [form.to_s.upcase]
+      buffer = []
 
-      case form
-        when :select, :describe
-          only_count = values.empty? and options[:count]
-          buffer << 'DISTINCT' if options[:distinct] and not only_count
-          buffer << 'REDUCED'  if options[:reduced]
-          buffer << ((values.empty? and not options[:count]) ? '*' : values.map { |v| SPARQL::Client.serialize_value(v[1]) }.join(' '))
-          if options[:count]
-            options[:count].each do |var, count|
-              buffer << '( COUNT(' + (options[:distinct] ? 'DISTINCT ' : '') +
-                (var.is_a?(String) ? var : "?#{var}") + ') AS ' + (count.is_a?(String) ? count : "?#{count}") + ' )'
-            end
+      if form == :ask
+        buffer << 'ASK'
+      end
+
+      if [:select, :describe].include?(form)
+        buffer << form.to_s.upcase
+        only_count = values.empty? and options[:count]
+        buffer << 'DISTINCT' if options[:distinct] and not only_count
+        buffer << 'REDUCED'  if options[:reduced]
+        buffer << ((values.empty? and not options[:count]) ? '*' : values.map { |v| SPARQL::Client.serialize_value(v[1]) }.join(' '))
+        if options[:count]
+          options[:count].each do |var, count|
+            buffer << '( COUNT(' + (options[:distinct] ? 'DISTINCT ' : '') +
+              (var.is_a?(String) ? var : "?#{var}") + ') AS ' + (count.is_a?(String) ? count : "?#{count}") + ' )'
           end
-        when :construct
-          buffer << '{'
-          buffer += serialize_patterns(options[:template])
-          buffer << '}'
+        end
+      end
+
+      if options[:with]
+        buffer << "WITH #{SPARQL::Client.serialize_value(options[:with])}"
+      end
+
+      if !@inserts.empty?
+        buffer << 'INSERT {'
+        buffer << serialize_patterns(@inserts)
+        buffer << '}'
+      end
+
+      if !@deletes.empty?
+        buffer << 'DELETE {'
+        buffer << serialize_patterns(@deletes)
+        buffer << '}'
+      end
+
+      if options[:template]
+        buffer << 'CONSTRUCT {'
+        buffer.concat serialize_patterns(options[:template])
+        buffer << '}'
       end
 
       buffer << "FROM #{SPARQL::Client.serialize_value(options[:from])}" if options[:from]
@@ -351,16 +428,16 @@ module SPARQL; class Client
           buffer << "{ #{sq.to_s} } ."
         end
 
-        buffer += serialize_patterns(patterns)
+        buffer.concat serialize_patterns(patterns)
         if options[:optionals]
           options[:optionals].each do |patterns|
             buffer << 'OPTIONAL {'
-            buffer += serialize_patterns(patterns)
+            buffer.concat serialize_patterns(patterns)
             buffer << '}'
           end
         end
         if options[:filters]
-          buffer += options[:filters].map { |filter| "FILTER(#{filter})" }
+          buffer.concat options[:filters].map { |filter| "FILTER(#{filter})" }
         end
         if options[:graph]
           buffer << '}' # GRAPH
@@ -371,12 +448,12 @@ module SPARQL; class Client
 
       if options[:group_by]
         buffer << 'GROUP BY'
-        buffer += options[:group_by].map { |var| var.is_a?(String) ? var : "?#{var}" }
+        buffer.concat options[:group_by].map { |var| var.is_a?(String) ? var : "?#{var}" }
       end
 
       if options[:order_by]
         buffer << 'ORDER BY'
-        buffer += options[:order_by].map { |var| var.is_a?(String) ? var : "?#{var}" }
+        buffer.concat options[:order_by].map { |var| var.is_a?(String) ? var : "?#{var}" }
       end
 
       buffer << "OFFSET #{options[:offset]}" if options[:offset]

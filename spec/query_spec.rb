@@ -120,6 +120,36 @@ describe SPARQL::Client::Query do
     end
   end
 
+  context 'when building informative insert queries' do
+    it 'should support basic graph patterns' do
+      @query.insert([:a, :b, :c], [:d, :e, :f]).where([:x, :y, :z]).optional([:k, :l, :m]).to_s.should == "INSERT { ?a ?b ?c . ?d ?e ?f . } WHERE { ?x ?y ?z . OPTIONAL { ?k ?l ?m . } }"
+    end
+
+    it 'should support with' do
+      @query.insert([:a, :b, :c]).with('http://example.com').where([:x, :y, :z]).to_s.should == "WITH <http://example.com> INSERT { ?a ?b ?c . } WHERE { ?x ?y ?z . }"
+    end
+  end
+
+  context 'when building informative delete queries' do
+    it 'should support basic graph patterns' do
+      @query.delete([:a, :b, :c], [:d, :e, :f]).where([:x, :y, :z]).optional([:k, :l, :m]).to_s.should == "DELETE { ?a ?b ?c . ?d ?e ?f . } WHERE { ?x ?y ?z . OPTIONAL { ?k ?l ?m . } }"
+    end
+
+    it 'should support with' do
+      @query.delete([:a, :b, :c]).with('http://example.com').where([:x, :y, :z]).to_s.should == "WITH <http://example.com> DELETE { ?a ?b ?c . } WHERE { ?x ?y ?z . }"
+    end
+  end
+
+  context 'when building insert/delete queries' do
+    it 'should support basic graph patterns' do
+      @query.delete([:a, :b, :c], [:d, :e, :f]).insert([:u, :v, :w]).where([:x, :y, :z]).optional([:k, :l, :m]).to_s.should == "INSERT { ?u ?v ?w . } DELETE { ?a ?b ?c . ?d ?e ?f . } WHERE { ?x ?y ?z . OPTIONAL { ?k ?l ?m . } }"
+    end
+
+    it 'should support with' do
+      @query.delete([:a, :b, :c]).insert([:u, :v, :w]).with('http://example.com').where([:x, :y, :z]).to_s.should == "WITH <http://example.com> INSERT { ?u ?v ?w . } DELETE { ?a ?b ?c . } WHERE { ?x ?y ?z . }"
+    end
+  end
+
   context "when building DESCRIBE queries" do
     it "should support basic graph patterns" do
       @query.describe.where([:s, :p, :o]).to_s.should == "DESCRIBE * WHERE { ?s ?p ?o . }"
