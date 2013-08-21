@@ -142,11 +142,11 @@ describe SPARQL::Client::Query do
 
   context 'when building insert/delete queries' do
     it 'should support basic graph patterns' do
-      @query.delete([:a, :b, :c], [:d, :e, :f]).insert([:u, :v, :w]).where([:x, :y, :z]).optional([:k, :l, :m]).to_s.should == "INSERT { ?u ?v ?w . } DELETE { ?a ?b ?c . ?d ?e ?f . } WHERE { ?x ?y ?z . OPTIONAL { ?k ?l ?m . } }"
+      @query.delete([:a, :b, :c], [:d, :e, :f]).insert([:u, :v, :w]).where([:x, :y, :z]).optional([:k, :l, :m]).to_s.should == "DELETE { ?a ?b ?c . ?d ?e ?f . } INSERT { ?u ?v ?w . } WHERE { ?x ?y ?z . OPTIONAL { ?k ?l ?m . } }"
     end
 
     it 'should support with' do
-      @query.delete([:a, :b, :c]).insert([:u, :v, :w]).with('http://example.com').where([:x, :y, :z]).to_s.should == "WITH <http://example.com> INSERT { ?u ?v ?w . } DELETE { ?a ?b ?c . } WHERE { ?x ?y ?z . }"
+      @query.delete([:a, :b, :c]).insert([:u, :v, :w]).with('http://example.com').where([:x, :y, :z]).to_s.should == "WITH <http://example.com> DELETE { ?a ?b ?c . } INSERT { ?u ?v ?w . } WHERE { ?x ?y ?z . }"
     end
   end
 
