@@ -396,15 +396,15 @@ module SPARQL; class Client
         buffer << "WITH #{SPARQL::Client.serialize_value(options[:with])}"
       end
 
-      if !@inserts.empty?
-        buffer << 'INSERT {'
-        buffer << serialize_patterns(@inserts)
-        buffer << '}'
-      end
-
       if !@deletes.empty?
         buffer << 'DELETE {'
         buffer << serialize_patterns(@deletes)
+        buffer << '}'
+      end
+
+      if !@inserts.empty?
+        buffer << 'INSERT {'
+        buffer << serialize_patterns(@inserts)
         buffer << '}'
       end
 
