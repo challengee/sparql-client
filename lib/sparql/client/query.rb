@@ -106,6 +106,7 @@ module SPARQL; class Client
       @inserts = []
       @deletes = []
       @subqueries = []
+      @filter_not_exists = []
       @form = form.respond_to?(:to_sym) ? form.to_sym : form.to_s.to_sym
       super([], options, &block)
     end
@@ -184,6 +185,11 @@ module SPARQL; class Client
       subqueries, patterns = patterns_queries.partition {|pq| pq.is_a? SPARQL::Client::Query}
       @patterns += build_patterns(patterns)
       @subqueries += subqueries
+      self
+    end
+
+    def filter_not_exists(*patterns)
+      @filter_not_exists << build_patterns(patterns)
       self
     end
 
@@ -438,6 +444,9 @@ module SPARQL; class Client
         end
         if options[:filters]
           buffer.concat options[:filters].map { |filter| "FILTER(#{filter})" }
+        end
+        if !@filter_not_exists.empty?
+          buffer.concat @filter_not_exists.map { |filter| "FILTER NOT EXISTS {#{serialize_patterns(filter).join}}" }
         end
         if options[:graph]
           buffer << '}' # GRAPH
